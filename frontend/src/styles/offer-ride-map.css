@@ -1,0 +1,482 @@
+/* ============================================================
+   offer-ride-map.css
+   Post-ride full-page dashboard for OfferRidePage.
+   Colour palette: Pistachio #b2d3c2 | Dark Grey #41424c | White #fff
+   ============================================================ */
+
+/* ── Full-page container ── */
+.orm-fullpage {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 60px);   /* subtract nav */
+  overflow: hidden;
+  background: var(--bg-main);
+  animation: pageFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ── Top bar ── */
+.orm-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.4rem;
+  background: #ffffff;
+  border-bottom: 1px solid rgba(65,66,76,0.09);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.04);
+  flex-shrink: 0;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.orm-topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.orm-topbar-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #b2d3c2, #8dbda8);
+  display: flex; align-items: center; justify-content: center;
+  color: #41424c;
+  flex-shrink: 0;
+}
+
+.orm-topbar-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #41424c;
+  display: block;
+}
+
+.orm-topbar-sub {
+  font-size: 0.78rem;
+  color: #5a5b66;
+  display: block;
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orm-topbar-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.orm-action-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid rgba(65,66,76,0.14);
+  color: #5a5b66;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+.orm-action-ghost:hover {
+  background: #f4f5f6;
+  color: #41424c;
+  border-color: rgba(65,66,76,0.22);
+}
+
+/* ── Main split layout ── */
+.orm-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ── Left sidebar ── */
+.orm-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1.1rem;
+  overflow-y: auto;
+  background: #f8f9fa;
+  border-right: 1px solid rgba(65,66,76,0.08);
+}
+
+/* Success badge */
+.orm-success-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: linear-gradient(135deg, rgba(178,211,194,0.35), rgba(178,211,194,0.18));
+  border: 1px solid rgba(178,211,194,0.7);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  color: #41424c;
+}
+.orm-success-badge svg { flex-shrink: 0; color: #22a36b; margin-top: 2px; }
+.orm-success-badge-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  color: #41424c;
+  margin-bottom: 2px;
+}
+.orm-success-badge-sub {
+  font-size: 0.78rem;
+  color: #5a5b66;
+  line-height: 1.4;
+}
+
+/* Route card */
+.orm-route-card {
+  background: #ffffff;
+  border: 1px solid rgba(65,66,76,0.09);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+}
+
+.orm-route-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.orm-dot {
+  width: 12px; height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+.orm-dot-green { background: #22c55e; }
+.orm-dot-red   { background: #ef4444; }
+
+.orm-route-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #5a5b66;
+}
+
+.orm-route-place {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #41424c;
+  margin-top: 1px;
+  word-break: break-word;
+}
+
+.orm-route-connector {
+  width: 1px;
+  height: 20px;
+  background: rgba(65,66,76,0.15);
+  margin: 4px 0 4px 5.5px;
+}
+
+.orm-route-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(65,66,76,0.07);
+  font-size: 0.78rem;
+  color: #5a5b66;
+}
+.orm-route-meta span {
+  display: flex; align-items: center; gap: 4px;
+}
+
+/* Section header */
+.orm-section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #5a5b66;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0;
+}
+
+.orm-pursuer-count {
+  margin-left: auto;
+  background: #b2d3c2;
+  color: #41424c;
+  font-size: 0.72rem;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 20px;
+}
+
+.orm-spinner {
+  display: inline-block;
+  margin-left: auto;
+  width: 14px; height: 14px;
+  border: 2px solid rgba(65,66,76,0.15);
+  border-top-color: #41424c;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+/* Empty pursuers */
+.orm-empty-pursuers {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: #5a5b66;
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* Pursuer list */
+.orm-pursuer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.orm-pursuer-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  background: #ffffff;
+  border: 1.5px solid rgba(65,66,76,0.09);
+  border-radius: 12px;
+  padding: 0.85rem 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  font-family: inherit;
+  position: relative;
+  flex-wrap: wrap;
+}
+.orm-pursuer-card:hover {
+  border-color: #b2d3c2;
+  background: rgba(178,211,194,0.06);
+  box-shadow: 0 3px 12px rgba(178,211,194,0.2);
+}
+.orm-pursuer-card--selected {
+  border-color: #41424c !important;
+  background: rgba(65,66,76,0.04) !important;
+  box-shadow: 0 4px 16px rgba(65,66,76,0.12) !important;
+}
+
+.orm-pursuer-avatar {
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #b2d3c2, #8dbda8);
+  color: #41424c;
+  font-weight: 800;
+  font-size: 0.95rem;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.orm-pursuer-info { flex: 1; min-width: 0; }
+
+.orm-pursuer-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  color: #41424c;
+  margin-bottom: 3px;
+}
+
+.orm-pursuer-route {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.76rem;
+  color: #5a5b66;
+  flex-wrap: wrap;
+}
+.orm-pursuer-from, .orm-pursuer-to {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.orm-pursuer-arrow { color: #b2d3c2; font-size: 0.8rem; }
+
+.orm-pursuer-dist {
+  font-size: 0.72rem;
+  color: #8a8b96;
+  margin-top: 3px;
+}
+
+.orm-pursuer-selected-badge {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #7c3aed;
+  font-weight: 600;
+  margin-top: 4px;
+}
+
+/* ── Map panel ── */
+.orm-map-panel {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Map legend */
+.orm-map-legend {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(65,66,76,0.1);
+  border-radius: 10px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  z-index: 500;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+}
+
+.orm-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #41424c;
+}
+
+.orm-legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.orm-legend-dot--dashed {
+  background: transparent !important;
+  border: 2px dashed #7c3aed;
+}
+
+/* ── Pursuer detail drawer ── */
+.orm-detail-drawer {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  background: #ffffff;
+  border-top: 1px solid rgba(65,66,76,0.1);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -6px 24px rgba(0,0,0,0.10);
+  z-index: 600;
+  animation: slideUpDrawer 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  padding: 0 0 env(safe-area-inset-bottom, 0);
+}
+
+@keyframes slideUpDrawer {
+  from { transform: translateY(100%); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+.orm-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem 1.2rem 0.7rem;
+  border-bottom: 1px solid rgba(65,66,76,0.07);
+}
+
+.orm-detail-avatar {
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #41424c, #5a5b66);
+  color: #fff;
+  font-weight: 800;
+  font-size: 1rem;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+}
+
+.orm-detail-info { flex: 1; }
+.orm-detail-name  { font-weight: 800; font-size: 0.95rem; color: #41424c; }
+.orm-detail-sub   { font-size: 0.78rem; color: #5a5b66; }
+
+.orm-detail-close {
+  background: rgba(65,66,76,0.07);
+  border: none;
+  border-radius: 50%;
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  color: #41424c;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.orm-detail-close:hover { background: rgba(65,66,76,0.14); }
+
+.orm-detail-body {
+  padding: 0.9rem 1.2rem 1rem;
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.orm-detail-route {
+  flex: 1;
+  min-width: 180px;
+}
+
+.orm-detail-stop {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.orm-detail-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.orm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: rgba(178,211,194,0.25);
+  color: #41424c;
+  border: 1px solid rgba(178,211,194,0.5);
+}
+.orm-chip--purple {
+  background: rgba(124,58,237,0.08);
+  color: #7c3aed;
+  border-color: rgba(124,58,237,0.2);
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 768px) {
+  .orm-layout {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+  .orm-sidebar {
+    max-height: 42vh;
+    border-right: none;
+    border-bottom: 1px solid rgba(65,66,76,0.08);
+  }
+  .orm-map-panel {
+    min-height: 320px;
+  }
+  .orm-topbar-sub { max-width: 180px; }
+}

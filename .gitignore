@@ -1,0 +1,42 @@
+# Dependencies
+/node_modules
+/backend/node_modules
+/frontend/node_modules
+
+# Build files
+/backend/dist
+/frontend/dist
+
+# Environment variables
+.env
+/backend/.env
+/frontend/.env
+
+# Lock files
+package-lock.json
+/backend/package-lock.json
+/frontend/package-lock.json
+
+# Database file
+/backend/db.json
+# Dependencies
+/node_modules
+/backend/node_modules
+/frontend/node_modules
+
+# Build files
+/backend/dist
+/frontend/dist
+
+# Environment variables
+.env
+/backend/.env
+/frontend/.env
+
+# Lock files
+package-lock.json
+/backend/package-lock.json
+/frontend/package-lock.json
+
+# Database file
+/backend/db.json

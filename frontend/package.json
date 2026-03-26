@@ -1,0 +1,33 @@
+{
+  "name": "uniride",
+  "version": "1.0.0",
+  "description": "This project is a dynamic carpool system designed to help university students commute more efficiently. The system will connect students with similar routes, allowing them to share rides on a regular basis.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "start": "npx vite",
+    "build": "tsc && vite build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@react-oauth/google": "^0.13.4",
+    "@types/leaflet": "^1.9.21",
+    "leaflet": "^1.9.4",
+    "lucide-react": "^0.577.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-leaflet": "^5.0.0",
+    "react-router-dom": "^7.13.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.14",
+    "@types/react-dom": "^18.2.3",
+    "@vitejs/plugin-react": "^4.3.1",
+    "typescript": "^5.9.3",
+    "vite": "^5.3.5"
+  }
+}
