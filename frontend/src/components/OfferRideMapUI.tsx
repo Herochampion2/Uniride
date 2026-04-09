@@ -27,6 +27,15 @@ const landmarks = [
 
 const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090];
 
+// ── Utility: Generate unique route key to force Leaflet layer recreation ──
+const generateRouteKey = (waypoints: [number, number][] | null): string => {
+  if (!waypoints || waypoints.length === 0) return 'empty';
+  // Create hash from first and last coordinate + length
+  const first = waypoints[0];
+  const last = waypoints[waypoints.length - 1];
+  return `${first[0]}-${first[1]}-${last[0]}-${last[1]}-${waypoints.length}`;
+};
+
 // ── Theme colours (matching index.css vars)
 const PISTACHIO  = '#b2d3c2';
 const DARK_GREY  = '#41424c';
@@ -294,13 +303,15 @@ const OfferRideMapUI: React.FC<OfferRideMapUIProps> = ({
   }, [filteredPursuerPings, selectedPursuerId, onPursuerClick]);
 
   // ── Optimal re-route (purple) when waypoints change ────────────────────────
+  // CRITICAL: Use route key in dependencies to force complete layer destruction
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
 
+    // Completely destroy old layer BEFORE creating new one
     if (optLayer.current) {
       optLayer.current.remove();
-      optLayer.current = null;
+      optLayer.current = null; // Critical: null out immediately
     }
 
     if (!optimalWaypoints || optimalWaypoints.length < 2) return;
@@ -334,16 +345,18 @@ const OfferRideMapUI: React.FC<OfferRideMapUIProps> = ({
         }
       } catch {/* silent */ }
     })();
-  }, [optimalWaypoints]);
+  }, [generateRouteKey(optimalWaypoints)]);
 
   // ── Confirmed active navigation route (solid blue) ────────────────────────
+  // CRITICAL: Use route key in dependencies to force complete layer destruction
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
 
+    // Completely destroy old layer BEFORE creating new one
     if (confirmedLayer.current) {
       confirmedLayer.current.remove();
-      confirmedLayer.current = null;
+      confirmedLayer.current = null; // Critical: null out immediately
     }
 
     if (!confirmedRoute || confirmedRoute.length < 2) return;
@@ -376,7 +389,7 @@ const OfferRideMapUI: React.FC<OfferRideMapUIProps> = ({
         }
       } catch {/* silent */ }
     })();
-  }, [confirmedRoute]);
+  }, [generateRouteKey(confirmedRoute)]);
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>

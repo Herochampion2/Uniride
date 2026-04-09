@@ -138,7 +138,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
       setDestPos(dPos);
 
       // Calculate distance and cost
-      const distance = oPos && dPos ? haversineDistance(oPos[0], oPos[1], dPos[0], dPos[1]) : 10;
+      const distance = oPos && dPos ? haversineDistance({lat: oPos[0], lon: oPos[1]}, {lat: dPos[0], lon: dPos[1]}) : 10;
       const cost = calculateRideCost(distance, vehicleType);
 
       const newRide = await RideService.createRide({
