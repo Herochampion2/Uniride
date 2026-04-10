@@ -1,4 +1,5 @@
 import { Ride } from './models/Ride';
+import { Route } from './models/Route';
 
 /**
  * Passenger request interface for matching
@@ -19,6 +20,18 @@ export interface MatchResult {
   pickupDistance: number; // Distance from driver's current location to passenger pickup
   detourPercentage: number; // Percentage of detour compared to original route
   score: number; // Match quality score for sorting
+}
+
+export interface PursuerMatchResult {
+  id: string;
+  user: Route['user'];
+  origin: string;
+  destination: string;
+  time: string;
+  days: string[];
+  pickupDistanceKm?: number;
+  timeDeltaMinutes?: number;
+  score: number;
 }
 
 export class MatchingService {
@@ -251,5 +264,154 @@ export class MatchingService {
     const detourPercentage = hypotheticalDistance / originalDistance;
 
     return detourPercentage;
+  }
+
+  private static normalizeText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, ' ')
+      .trim();
+  }
+
+  private static textMatches(textA: string, textB: string): boolean {
+    const normalizedA = this.normalizeText(textA);
+    const normalizedB = this.normalizeText(textB);
+    return (
+      normalizedA.includes(normalizedB) ||
+      normalizedB.includes(normalizedA)
+    );
+  }
+
+  private static parseTimeToMinutes(time: string): number | null {
+    const normalized = time.trim().toUpperCase();
+    const match = normalized.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/);
+    if (!match) {
+      return null;
+    }
+
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const meridiem = match[3];
+
+    if (meridiem === 'PM' && hours < 12) {
+      hours += 12;
+    }
+    if (meridiem === 'AM' && hours === 12) {
+      hours = 0;
+    }
+
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return null;
+    }
+
+    return hours * 60 + minutes;
+  }
+
+  private static getWeekday(date: Date): string {
+    return date.toLocaleDateString('en-US', { weekday: 'long' });
+  }
+
+  static findPassengerRequestsForDriverRide(
+    driverRide: Ride,
+    passengerRoutes: Route[],
+    maxPickupDistanceKm = 3,
+    maxTimeDeltaMinutes = 60
+  ): PursuerMatchResult[] {
+    const matches: PursuerMatchResult[] = [];
+    const driverDeparture = new Date(driverRide.departureTime);
+    const driverTimeMinutes = driverDeparture.getHours() * 60 + driverDeparture.getMinutes();
+    const driverWeekday = this.getWeekday(driverDeparture);
+
+    const driverLat = driverRide.tracking?.driverLocation?.lat ?? driverRide.originCoords?.lat;
+    const driverLng = driverRide.tracking?.driverLocation?.lng ?? driverRide.originCoords?.lng;
+
+    console.log('[MatchingService] driverRide:', driverRide.id, 'lat:', driverLat, 'lng:', driverLng, 'weekday:', driverWeekday, 'timeMinutes:', driverTimeMinutes);
+
+    for (const route of passengerRoutes) {
+      if (!route.user || !route.origin || !route.destination) {
+        console.log('[MatchingService] skipping route missing required fields:', route.id);
+        continue;
+      }
+
+      console.log('[MatchingService] evaluating route:', route.id, route.origin, '->', route.destination, 'time:', route.time, 'days:', route.days);
+
+      if (route.days && route.days.length > 0 && !route.days.includes(driverWeekday)) {
+        console.log('[MatchingService] excluded by weekday mismatch:', route.days, 'driverWeekday:', driverWeekday);
+        continue;
+      }
+
+      const hasRouteCoords = (route as any).originCoords && (route as any).destinationCoords;
+      let pickupDistanceKm: number | undefined;
+      let originMatch = true;
+      let destinationMatch = true;
+
+      if (driverLat !== undefined && driverLng !== undefined && (route as any).originCoords) {
+        const routeOriginCoords = (route as any).originCoords;
+        pickupDistanceKm = this.haversineDistance(
+          driverLat,
+          driverLng,
+          Number(routeOriginCoords.lat),
+          Number(routeOriginCoords.lng)
+        );
+        console.log('[MatchingService] calculated pickupDistanceKm:', pickupDistanceKm.toFixed(3), 'km for route:', route.id);
+
+        if (pickupDistanceKm > maxPickupDistanceKm) {
+          console.log('[MatchingService] excluded by pickupDistanceKm >', maxPickupDistanceKm, 'km');
+          continue;
+        }
+      } else {
+        console.log('[MatchingService] no originCoords available for route:', route.id, 'falling back to text matching');
+      }
+
+      if (!hasRouteCoords) {
+        originMatch = this.textMatches(driverRide.origin, route.origin);
+        destinationMatch = this.textMatches(driverRide.destination, route.destination);
+        console.log('[MatchingService] originMatch:', originMatch, 'destinationMatch:', destinationMatch);
+
+        if (!originMatch || !destinationMatch) {
+          console.log('[MatchingService] excluded by text match:', {
+            driverOrigin: driverRide.origin,
+            routeOrigin: route.origin,
+            driverDestination: driverRide.destination,
+            routeDestination: route.destination,
+          });
+          continue;
+        }
+      }
+
+      let timeDeltaMinutes: number | undefined;
+      const routeTime = this.parseTimeToMinutes(route.time);
+      if (routeTime !== null) {
+        timeDeltaMinutes = Math.abs(driverTimeMinutes - routeTime);
+        console.log('[MatchingService] timeDeltaMinutes:', timeDeltaMinutes);
+        if (timeDeltaMinutes > maxTimeDeltaMinutes) {
+          console.log('[MatchingService] excluded by maxTimeDeltaMinutes >', maxTimeDeltaMinutes);
+          continue;
+        }
+      } else {
+        console.log('[MatchingService] route time could not be parsed:', route.time);
+      }
+
+      const score =
+        (pickupDistanceKm ?? maxPickupDistanceKm) * 2 +
+        (timeDeltaMinutes !== undefined ? timeDeltaMinutes / 10 : 0);
+
+      console.log('[MatchingService] route passed matching filters:', route.id, 'score:', score);
+
+      matches.push({
+        id: route.id,
+        user: route.user,
+        origin: route.origin,
+        destination: route.destination,
+        time: route.time,
+        days: route.days ?? [],
+        pickupDistanceKm,
+        timeDeltaMinutes,
+        score,
+      });
+    }
+
+    matches.sort((a, b) => a.score - b.score);
+    return matches;
   }
 }

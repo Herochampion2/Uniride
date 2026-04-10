@@ -18,4 +18,5 @@ export interface Ride {
   cost: number;
   vehicleType?: 'two-wheeler' | 'four-wheeler';
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
+  distance?: number;
 }

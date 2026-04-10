@@ -21,18 +21,27 @@ const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ u
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
 
+  const loadUserRides = async () => {
+    setLoadingRides(true);
+    try {
+      const rides = await RideService.getAllRides();
+      const myRides = rides.filter((r: Ride) => r.driver.id === userId || r.passengers.some((p: User) => p.id === userId));
+      setUserRides(myRides);
+    } catch (err) {
+      console.error("Failed to fetch rides", err);
+    } finally {
+      setLoadingRides(false);
+    }
+  };
+
   useEffect(() => {
     UserService.getUser(userId)
       .then(data => setUser(data))
       .catch(err => console.error("Failed to fetch user", err));
 
-    RideService.getAllRides()
-      .then(rides => {
-        const myRides = rides.filter((r: Ride) => r.driver.id === userId || r.passengers.some((p: User) => p.id === userId));
-        setUserRides(myRides);
-      })
-      .catch(err => console.error("Failed to fetch rides", err))
-      .finally(() => setLoadingRides(false));
+    loadUserRides();
+    const refreshInterval = window.setInterval(loadUserRides, 10000);
+    return () => window.clearInterval(refreshInterval);
   }, [userId]);
 
   const handleCancelBooking = async (rideId: string) => {
@@ -182,6 +191,23 @@ const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ u
                   <p className={`active-ride-status ${ride.status === 'ACTIVE' ? 'active' : 'pending'}`}>
                     Status: {ride.status}
                   </p>
+                  {ride.driver.id === userId && ride.passengers.length > 0 && (
+                    <p style={{
+                      margin: '0.4rem 0 0',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '0.35rem',
+                      padding: '0.35rem 0.65rem',
+                      borderRadius: '999px',
+                      background: '#d1fae5',
+                      color: '#065f46',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      maxWidth: 'fit-content'
+                    }}>
+                      Passenger confirmed
+                    </p>
+                  )}
                 </div>
                 {ride.driver.id === userId ? (
                   <button

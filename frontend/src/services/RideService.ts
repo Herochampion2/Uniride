@@ -1,5 +1,18 @@
 const API_URL = '/api';
 
+const fetchJson = async (url: string, init?: RequestInit) => {
+  const res = await fetch(url, init);
+  const contentType = res.headers.get('content-type') || '';
+  const body = contentType.includes('application/json') ? await res.json() : await res.text();
+
+  if (!res.ok) {
+    const message = typeof body === 'string' ? body : JSON.stringify(body);
+    throw new Error(message || `Request failed with status ${res.status}`);
+  }
+
+  return body;
+};
+
 export const RideService = {
   getAllRides: (filters?: { origin?: string; destination?: string; date?: string; originLat?: number; originLng?: number; destLat?: number; destLng?: number; radius?: number }) => {
     const params = new URLSearchParams();
@@ -12,31 +25,37 @@ export const RideService = {
     if (filters?.destLng !== undefined) params.append('destLng', filters.destLng.toString());
     if (filters?.radius !== undefined) params.append('radius', filters.radius.toString());
     const qs = params.toString() ? `?${params.toString()}` : '';
-    return fetch(`${API_URL}/rides${qs}`).then((res) => res.json());
+    return fetchJson(`${API_URL}/rides${qs}`);
   },
   createRide: (ride: any) => {
-    return fetch(`${API_URL}/rides`, {
+    return fetchJson(`${API_URL}/rides`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(ride),
-    }).then((res) => res.json());
+    });
   },
   getRideById: (rideId: string) => {
-    return fetch(`${API_URL}/rides/${rideId}`).then((res) => res.json());
+    return fetchJson(`${API_URL}/rides/${rideId}`);
+  },
+  getJourney: (rideId: string) => {
+    return fetchJson(`${API_URL}/journey/${rideId}`);
+  },
+  getRidePursuers: (rideId: string) => {
+    return fetchJson(`${API_URL}/rides/${rideId}/pursuers`);
   },
   bookRide: (rideId: string, passenger: any) => {
-    return fetch(`${API_URL}/rides/${rideId}/book`, {
+    return fetchJson(`${API_URL}/rides/${rideId}/book`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(passenger),
-    }).then((res) => res.json());
+    });
   },
   updateRideStatus: (rideId: string, status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED') => {
-    return fetch(`${API_URL}/rides/${rideId}/status`, {
+    return fetchJson(`${API_URL}/rides/${rideId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
-    }).then((res) => res.json());
+    });
   },
   updateRideTracking: (
     rideId: string,
@@ -50,32 +69,32 @@ export const RideService = {
       timestamp?: string;
     }
   ) => {
-    return fetch(`${API_URL}/rides/${rideId}/tracking`, {
+    return fetchJson(`${API_URL}/rides/${rideId}/tracking`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(location),
-    }).then((res) => res.json());
+    });
   },
   getRideTracking: (rideId: string) => {
-    return fetch(`${API_URL}/rides/${rideId}/tracking`).then((res) => res.json());
+    return fetchJson(`${API_URL}/rides/${rideId}/tracking`);
   },
   deleteRide: (rideId: string) => {
-    return fetch(`${API_URL}/rides/${rideId}`, {
+    return fetchJson(`${API_URL}/rides/${rideId}`, {
       method: 'DELETE',
-    }).then((res) => res.json());
+    });
   },
   cancelRideByDriver: (rideId: string, driverId: string) => {
-    return fetch(`${API_URL}/rides/${rideId}/cancel/driver`, {
+    return fetchJson(`${API_URL}/rides/${rideId}/cancel/driver`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ driverId }),
-    }).then((res) => res.json());
+    });
   },
   cancelBookingByPassenger: (rideId: string, passengerId: string) => {
-    return fetch(`${API_URL}/rides/${rideId}/cancel/passenger`, {
+    return fetchJson(`${API_URL}/rides/${rideId}/cancel/passenger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ passengerId }),
-    }).then((res) => res.json());
+    });
   },
 };

@@ -7,6 +7,24 @@ import { RideService } from '../services/RideService';
 import { Ride } from '../models/Ride';
 import '../styles/feature-pages.css';
 
+interface PursuerMatchResult {
+  id: string;
+  user: {
+    id: string;
+    name: string;
+    email?: string;
+    university?: string;
+    phone?: string;
+  };
+  origin: string;
+  destination: string;
+  time: string;
+  days: string[];
+  pickupDistanceKm?: number;
+  timeDeltaMinutes?: number;
+  score: number;
+}
+
 const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090];
 const DEFAULT_ZOOM = 12;
 
@@ -19,12 +37,17 @@ const LiveRidePage: React.FC<{ userId: string }> = ({ userId }) => {
   const [ride, setRide] = useState<Ride | null>(rideFromState);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [pursuers, setPursuers] = useState<PursuerMatchResult[]>([]);
+  const [pursuersLoading, setPursuersLoading] = useState(false);
+  const [pursuersError, setPursuersError] = useState('');
+  const [acceptingPursuerId, setAcceptingPursuerId] = useState<string | null>(null);
+  const [acceptMessage, setAcceptMessage] = useState<string>('');
 
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
   const originMarkerRef = useRef<L.Marker | null>(null);
   const destinationMarkerRef = useRef<L.Marker | null>(null);
-  const routeLineRef = useRef<L.GeoJSON | null>(null);
+  const routeLineRef = useRef<L.Polyline | L.GeoJSON | null>(null);
 
   const originCoords = ride?.originCoords;
   const destinationCoords = ride?.destinationCoords;
@@ -47,6 +70,70 @@ const LiveRidePage: React.FC<{ userId: string }> = ({ userId }) => {
       setLoading(false);
     }
   }, [ride, rideId]);
+
+  useEffect(() => {
+    if (!rideId) {
+      return;
+    }
+
+    const fetchPursuers = async () => {
+      setPursuersLoading(true);
+      try {
+        const data = await RideService.getRidePursuers(rideId);
+        if (Array.isArray(data)) {
+          setPursuers(data);
+          setPursuersError('');
+        } else {
+          setPursuers([]);
+          setPursuersError('Unexpected pursuer response from server');
+        }
+      } catch (err) {
+        console.error('[LiveRidePage] Failed to load matched pursuers:', err);
+        setPursuersError('Unable to load matching passenger requests.');
+      } finally {
+        setPursuersLoading(false);
+      }
+    };
+
+    fetchPursuers();
+    const intervalId = window.setInterval(fetchPursuers, 10000);
+    return () => window.clearInterval(intervalId);
+  }, [rideId]);
+
+  const handleAcceptPursuer = async (pursuer: PursuerMatchResult) => {
+    if (!ride || !rideId) {
+      return;
+    }
+
+    setAcceptingPursuerId(pursuer.id);
+    setAcceptMessage('');
+
+    try {
+      const bookingPayload = {
+        id: pursuer.user.id,
+        name: pursuer.user.name,
+        email: pursuer.user.email,
+        university: pursuer.user?.university ?? '',
+        phone: pursuer.user?.phone ?? '',
+        schedule: pursuer.days,
+        distanceKm: ride.distance ?? 0,
+      };
+
+      const result = await RideService.bookRide(rideId, bookingPayload);
+      if (result && result.passenger) {
+        setAcceptMessage(`Accepted ${pursuer.user.name} successfully.`);
+        setPursuers((prev) => prev.filter((item) => item.id !== pursuer.id));
+      } else {
+        setAcceptMessage(result.error || 'Failed to accept passenger request.');
+      }
+    } catch (err) {
+      console.error('[LiveRidePage] Accept pursuer error:', err);
+      const message = err instanceof Error ? err.message : 'Failed to accept passenger request.';
+      setAcceptMessage(message);
+    } finally {
+      setAcceptingPursuerId(null);
+    }
+  };
 
   useEffect(() => {
     if (!mapContainerRef.current) return;
@@ -129,31 +216,47 @@ const LiveRidePage: React.FC<{ userId: string }> = ({ userId }) => {
 
     const bounds = L.latLngBounds([originLatLng, destinationLatLng]);
 
+    const parseOsrmGeoJson = (geometry: any) => {
+      if (!geometry || geometry.type !== 'LineString' || !Array.isArray(geometry.coordinates)) {
+        return null;
+      }
+      return geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]] as [number, number]);
+    };
+
     (async () => {
       try {
         const res = await fetch(
           `https://router.project-osrm.org/route/v1/driving/${originLatLng[1]},${originLatLng[0]};${destinationLatLng[1]},${destinationLatLng[0]}?overview=full&geometries=geojson`
         );
+        if (!res.ok) {
+          throw new Error(`OSRM route fetch failed with status ${res.status}`);
+        }
         const data = await res.json();
+        const coordinates = parseOsrmGeoJson(data?.routes?.[0]?.geometry);
 
-        if (data?.routes?.length > 0 && data.routes[0].geometry) {
-          routeLineRef.current = L.geoJSON(data.routes[0].geometry, {
-            style: {
-              color: '#2563eb',
-              weight: 5,
-              opacity: 0.85,
-              lineCap: 'round',
-              lineJoin: 'round',
-            },
+        if (coordinates && coordinates.length > 0) {
+          const routeLine = L.polyline(coordinates, {
+            color: '#2563eb',
+            weight: 5,
+            opacity: 0.85,
+            lineCap: 'round',
+            lineJoin: 'round',
           }).addTo(map);
 
-          map.fitBounds(routeLineRef.current.getBounds(), {
+          routeLineRef.current = routeLine;
+          map.fitBounds(routeLine.getBounds(), {
             padding: [40, 40],
           });
           return;
         }
+
+        throw new Error('OSRM returned invalid route geometry');
       } catch (err) {
         console.error('[LiveRidePage] Route fetch failed', err);
+        if (routeLineRef.current) {
+          routeLineRef.current.remove();
+          routeLineRef.current = null;
+        }
       }
 
       map.fitBounds(bounds, {
@@ -224,6 +327,92 @@ const LiveRidePage: React.FC<{ userId: string }> = ({ userId }) => {
                 <p style={{ margin: '0.25rem 0 0', color: '#4b5563' }}>{ride?.departureTime ? new Date(ride.departureTime).toLocaleString() : 'Loading...'}</p>
               </div>
             </div>
+          </div>
+
+          <div style={{ background: '#fff', borderRadius: '1rem', padding: '1rem', border: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1rem', color: '#111827' }}>Matched passenger requests</h2>
+                <p style={{ margin: '0.4rem 0 0', color: '#6b7280', fontSize: '0.95rem' }}>
+                  Live matches are refreshed every 10 seconds.
+                </p>
+              </div>
+              {pursuersLoading && (
+                <span style={{ color: '#2563eb', fontWeight: 700 }}>Refreshing...</span>
+              )}
+            </div>
+
+            {pursuersError ? (
+              <div style={{ marginTop: '1rem', color: '#b91c1c', background: '#fee2e2', padding: '1rem', borderRadius: '0.75rem' }}>
+                {pursuersError}
+              </div>
+            ) : null}
+
+            {acceptMessage ? (
+              <div style={{ marginTop: '1rem', color: '#134e4a', background: '#d1fae5', padding: '1rem', borderRadius: '0.75rem' }}>
+                {acceptMessage}
+              </div>
+            ) : null}
+
+            {pursuers.length === 0 && !pursuersLoading && !pursuersError ? (
+              <div style={{ marginTop: '1rem', color: '#4b5563' }}>
+                No matching passenger requests found yet.
+              </div>
+            ) : null}
+
+            {pursuers.length > 0 && (
+              <div style={{ marginTop: '1rem', display: 'grid', gap: '0.75rem' }}>
+                {pursuers.map((pursuer) => (
+                  <div key={pursuer.id} style={{ border: '1px solid #e5e7eb', borderRadius: '0.75rem', padding: '1rem', background: '#f8fafc' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                      <div>
+                        <strong>{pursuer.user.name}</strong>
+                        <p style={{ margin: '0.25rem 0 0', color: '#4b5563' }}>{pursuer.user.email ?? 'No contact provided'}</p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <span style={{ display: 'block', fontWeight: 600, color: '#111827' }}>{pursuer.origin} → {pursuer.destination}</span>
+                        <span style={{ display: 'block', marginTop: '0.25rem', color: '#6b7280' }}>{pursuer.time}</span>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '0.75rem', display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.75rem' }}>
+                      <div>
+                        <strong>Days</strong>
+                        <p style={{ margin: '0.25rem 0 0', color: '#4b5563' }}>{pursuer.days.join(', ') || 'Any'}</p>
+                      </div>
+                      <div>
+                        <strong>Pickup distance</strong>
+                        <p style={{ margin: '0.25rem 0 0', color: '#4b5563' }}>{pursuer.pickupDistanceKm !== undefined ? `${pursuer.pickupDistanceKm.toFixed(1)} km` : 'N/A'}</p>
+                      </div>
+                      <div>
+                        <strong>Time difference</strong>
+                        <p style={{ margin: '0.25rem 0 0', color: '#4b5563' }}>{pursuer.timeDeltaMinutes !== undefined ? `${pursuer.timeDeltaMinutes} min` : 'N/A'}</p>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleAcceptPursuer(pursuer)}
+                        disabled={acceptingPursuerId === pursuer.id}
+                        style={{
+                          padding: '0.75rem 1rem',
+                          borderRadius: '0.75rem',
+                          border: 'none',
+                          background: '#2563eb',
+                          color: 'white',
+                          cursor: acceptingPursuerId === pursuer.id ? 'not-allowed' : 'pointer',
+                          opacity: acceptingPursuerId === pursuer.id ? 0.6 : 1,
+                        }}
+                      >
+                        {acceptingPursuerId === pursuer.id ? 'Accepting…' : 'Accept request'}
+                      </button>
+                      <span style={{ color: '#6b7280', fontSize: '0.95rem', alignSelf: 'center' }}>
+                        Match quality: {Math.max(0, Math.round((1 - pursuer.score / 100) * 100))}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ minHeight: '420px', borderRadius: '1rem', overflow: 'hidden', border: '1px solid var(--border)' }}>

@@ -6,13 +6,20 @@ import L from 'leaflet';
 import { RideService } from '../services/RideService';
 import '../styles/feature-pages.css';
 
-interface RideDetails {
-  id: string;
+interface JourneyData {
+  rideId: string;
   driver?: { id: string; name: string };
   origin: string;
   destination: string;
   departureTime: string;
-  status?: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+  status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED' | 'scheduled' | 'ongoing' | 'cancelled';
+  availableSeats?: number;
+  passengers?: any[];
+  tracking?: {
+    isLive: boolean;
+    lastUpdatedAt?: string;
+    driverLocation?: DriverLocation;
+  };
 }
 
 interface DriverLocation {
@@ -24,21 +31,17 @@ interface DriverLocation {
   timestamp: string;
 }
 
-interface TrackingSnapshot {
-  rideId: string;
-  status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
-  tracking?: {
-    isLive: boolean;
-    lastUpdatedAt?: string;
-    driverLocation?: DriverLocation;
-  };
-  driver?: { id?: string; name?: string };
-  origin: string;
-  destination: string;
-  departureTime: string;
-}
-
 const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090];
+
+const driverIcon = L.icon({
+  iconUrl: new URL('leaflet/dist/images/marker-icon.png', import.meta.url).href,
+  iconRetinaUrl: new URL('leaflet/dist/images/marker-icon-2x.png', import.meta.url).href,
+  shadowUrl: new URL('leaflet/dist/images/marker-shadow.png', import.meta.url).href,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
 
 const formatDateTime = (value?: string) => {
   if (!value) {
@@ -60,51 +63,41 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
   const navigate = useNavigate();
   const { rideId } = useParams<{ rideId: string }>();
   const location = useLocation();
-  const rideFromState = (location.state as { ride?: RideDetails } | null)?.ride ?? null;
-  const watchIdRef = useRef<number | null>(null);
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<L.Map | null>(null);
-  const driverMarkerRef = useRef<L.CircleMarker | null>(null);
-  const viewerMarkerRef = useRef<L.CircleMarker | null>(null);
-  const lineRef = useRef<L.Polyline | null>(null);
+  const journeyFromState = (location.state as { ride?: JourneyData } | null)?.ride ?? null;
 
-  const [ride, setRide] = useState<RideDetails | null>(rideFromState);
-  const [snapshot, setSnapshot] = useState<TrackingSnapshot | null>(null);
-  const [viewerLocation, setViewerLocation] = useState<DriverLocation | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const driverMarkerRef = useRef<L.Marker | null>(null);
+
+  const [journey, setJourney] = useState<JourneyData | null>(journeyFromState);
+  const [driverLocation, setDriverLocation] = useState<DriverLocation | null>(journeyFromState?.tracking?.driverLocation ?? null);
   const [loading, setLoading] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState('');
 
-  const isDriver = ride?.driver?.id === userId;
-  const driverLocation = snapshot?.tracking?.driverLocation;
+  const isDriver = journey?.driver?.id === userId;
 
   const mapCenter = useMemo<[number, number]>(() => {
     if (driverLocation) {
       return [driverLocation.lat, driverLocation.lng];
     }
-    if (viewerLocation) {
-      return [viewerLocation.lat, viewerLocation.lng];
-    }
     return DEFAULT_CENTER;
-  }, [driverLocation, viewerLocation]);
+  }, [driverLocation]);
 
-  const refreshTracker = async () => {
+  const refreshJourney = async () => {
     if (!rideId) {
       return;
     }
 
     try {
-      const ridePromise = rideFromState ? Promise.resolve(rideFromState) : RideService.getRideById(rideId);
-      const [rideData, trackingData] = await Promise.all([
-        ridePromise,
-        RideService.getRideTracking(rideId),
-      ]);
-      setRide(rideData);
-      setSnapshot(trackingData);
-      setError(''); // Clear any previous errors
+      const data = await RideService.getJourney(rideId);
+      setJourney(data);
+      setDriverLocation(data.tracking?.driverLocation ?? null);
+      setError('');
     } catch (err) {
-      console.error('Error loading tracker:', err);
-      const errorMsg = err instanceof Error ? err.message : 'Unable to load tracker details right now.';
+      console.error('Error loading journey:', err);
+      const errorMsg = err instanceof Error ? err.message : 'Unable to load journey details right now.';
       setError(errorMsg);
     } finally {
       setLoading(false);
@@ -112,143 +105,15 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
   };
 
   useEffect(() => {
-    void refreshTracker();
+    void refreshJourney();
     if (!rideId) {
       return;
     }
-    const poller = setInterval(() => {
-      void refreshTracker();
+    const poller = window.setInterval(() => {
+      void refreshJourney();
     }, 5000);
-    return () => clearInterval(poller);
+    return () => window.clearInterval(poller);
   }, [rideId]);
-
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setViewerLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-          heading: position.coords.heading,
-          speed: position.coords.speed,
-          accuracy: position.coords.accuracy,
-          timestamp: new Date(position.timestamp).toISOString(),
-        });
-      },
-      () => {},
-      { enableHighAccuracy: true, maximumAge: 5000, timeout: 10000 }
-    );
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (watchIdRef.current !== null) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-      }
-    };
-  }, []);
-
-  // Initialize and manage the map
-  useEffect(() => {
-    if (!mapContainerRef.current) return;
-
-    if (!mapInstanceRef.current) {
-      mapInstanceRef.current = L.map(mapContainerRef.current, {
-        zoomControl: false,
-      }).setView(mapCenter, 13);
-
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; OpenStreetMap contributors & CARTO'
-      }).addTo(mapInstanceRef.current);
-    }
-
-    return () => {
-      // Keep map instance alive for updates
-    };
-  }, []);
-
-  // Update map center and markers
-  useEffect(() => {
-    if (!mapInstanceRef.current) return;
-
-    mapInstanceRef.current.flyTo(mapCenter, 13, { animate: true, duration: 1.5 });
-
-    // Update driver location marker
-    if (driverLocation) {
-      if (!driverMarkerRef.current) {
-        driverMarkerRef.current = L.circleMarker([driverLocation.lat, driverLocation.lng], {
-          color: '#2563eb',
-          fillColor: '#3b82f6',
-          fillOpacity: 0.85,
-          radius: 10,
-          weight: 2,
-          className: 'driver-marker'
-        }).addTo(mapInstanceRef.current);
-      } else {
-        driverMarkerRef.current.setLatLng([driverLocation.lat, driverLocation.lng]);
-      }
-      
-      driverMarkerRef.current.bindPopup(
-        `<div style="font-family:Inter,sans-serif;"><strong style="color:#2563eb;">🚗 Driver Location</strong><br />Updated: ${formatDateTime(driverLocation.timestamp)}</div>`
-      );
-    } else if (driverMarkerRef.current) {
-      driverMarkerRef.current.remove();
-      driverMarkerRef.current = null;
-    }
-
-    // Update viewer location marker (passenger)
-    if (viewerLocation) {
-      if (!viewerMarkerRef.current) {
-        viewerMarkerRef.current = L.circleMarker([viewerLocation.lat, viewerLocation.lng], {
-          color: '#a855f7',
-          fillColor: '#d946ef',
-          fillOpacity: 0.85,
-          radius: 8,
-          weight: 2,
-          className: 'passenger-marker'
-        }).addTo(mapInstanceRef.current);
-      } else {
-        viewerMarkerRef.current.setLatLng([viewerLocation.lat, viewerLocation.lng]);
-      }
-      
-      viewerMarkerRef.current.bindPopup('<div style="font-family:Inter,sans-serif;"><strong style="color:#a855f7;">👤 Passenger Location</strong></div>');
-    } else if (viewerMarkerRef.current) {
-      viewerMarkerRef.current.remove();
-      viewerMarkerRef.current = null;
-    }
-
-    // Update line between driver and viewer
-    if (driverLocation && viewerLocation) {
-      const positions: [number, number][] = [
-        [viewerLocation.lat, viewerLocation.lng],
-        [driverLocation.lat, driverLocation.lng],
-      ];
-      
-      if (!lineRef.current) {
-        lineRef.current = L.polyline(positions, {
-          color: '#64748b',
-          dashArray: '6 6',
-          weight: 2
-        }).addTo(mapInstanceRef.current);
-      } else {
-        lineRef.current.setLatLngs(positions);
-      }
-    } else if (lineRef.current) {
-      lineRef.current.remove();
-      lineRef.current = null;
-    }
-  }, [driverLocation, viewerLocation, mapCenter]);
-
-  useEffect(() => {
-    return () => {
-      if (mapInstanceRef.current) {
-        mapInstanceRef.current.remove();
-        mapInstanceRef.current = null;
-      }
-    };
-  }, []);
 
   const startSharing = async () => {
     if (!rideId) {
@@ -268,7 +133,7 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
     setIsSharing(true);
 
     watchIdRef.current = navigator.geolocation.watchPosition(
-      (position) => {
+      async (position) => {
         const latestLocation: DriverLocation = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
@@ -278,22 +143,22 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
           timestamp: new Date(position.timestamp).toISOString(),
         };
 
-        setViewerLocation(latestLocation);
+        setDriverLocation(latestLocation);
 
-        void RideService.updateRideTracking(rideId, {
-          driverId: userId,
-          lat: latestLocation.lat,
-          lng: latestLocation.lng,
-          heading: latestLocation.heading,
-          speed: latestLocation.speed,
-          accuracy: latestLocation.accuracy,
-          timestamp: latestLocation.timestamp,
-        }).then(() => {
-          void refreshTracker();
-        }).catch((err) => {
+        try {
+          await RideService.updateRideTracking(rideId, {
+            driverId: userId,
+            lat: latestLocation.lat,
+            lng: latestLocation.lng,
+            heading: latestLocation.heading,
+            speed: latestLocation.speed,
+            accuracy: latestLocation.accuracy,
+            timestamp: latestLocation.timestamp,
+          });
+          await refreshJourney();
+        } catch (err) {
           console.error('Failed to update location:', err);
-          // Continue tracking even if update fails
-        });
+        }
       },
       () => {
         setError('Failed to read your current location. Please allow location permissions.');
@@ -303,16 +168,63 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
   };
 
   const stopSharing = async () => {
+    if (!rideId) {
+      return;
+    }
     if (watchIdRef.current !== null) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
     }
-    if (rideId) {
-      await RideService.updateRideStatus(rideId, 'COMPLETED');
-      await refreshTracker();
-    }
+    await RideService.updateRideStatus(rideId, 'COMPLETED');
+    await refreshJourney();
     setIsSharing(false);
   };
+
+  useEffect(() => {
+    if (!mapContainerRef.current) return;
+    if (mapInstanceRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      center: mapCenter,
+      zoom: 13,
+      zoomControl: false,
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+    }).addTo(map);
+
+    mapInstanceRef.current = map;
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
+  }, [mapCenter]);
+
+  useEffect(() => {
+    if (!mapInstanceRef.current) return;
+
+    const map = mapInstanceRef.current;
+
+    if (!driverLocation) {
+      driverMarkerRef.current?.remove();
+      driverMarkerRef.current = null;
+      map.setView(DEFAULT_CENTER, 13);
+      return;
+    }
+
+    const position: [number, number] = [driverLocation.lat, driverLocation.lng];
+
+    if (!driverMarkerRef.current) {
+      driverMarkerRef.current = L.marker(position, { icon: driverIcon }).addTo(map);
+    } else {
+      driverMarkerRef.current.setLatLng(position);
+    }
+
+    driverMarkerRef.current.bindPopup(`Driver location<br/>Updated: ${formatDateTime(driverLocation.timestamp)}`);
+    map.setView(position, 13, { animate: true });
+  }, [driverLocation]);
 
   return (
     <div className="feature-page">
@@ -342,31 +254,31 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
             <div className="form-row">
               <div className="form-group">
                 <label><UserIcon size={14} /> Driver</label>
-                <div>{ride?.driver?.name || 'Unknown'}</div>
+                <div>{journey?.driver?.name || 'Unknown'}</div>
               </div>
               <div className="form-group">
                 <label><Clock size={14} /> Ride Status</label>
-                <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{snapshot?.status || ride?.status || 'scheduled'}</div>
+                <div style={{ fontWeight: 700, textTransform: 'capitalize' }}>{journey?.status || 'scheduled'}</div>
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
                 <label>From</label>
-                <div>{ride?.origin || snapshot?.origin || 'N/A'}</div>
+                <div>{journey?.origin || 'N/A'}</div>
               </div>
               <div className="form-group">
                 <label>To</label>
-                <div>{ride?.destination || snapshot?.destination || 'N/A'}</div>
+                <div>{journey?.destination || 'N/A'}</div>
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
                 <label><Clock size={14} /> Departure</label>
-                <div>{formatDateTime(ride?.departureTime || snapshot?.departureTime)}</div>
+                <div>{formatDateTime(journey?.departureTime)}</div>
               </div>
               <div className="form-group">
                 <label>Last Driver Update</label>
-                <div>{formatDateTime(snapshot?.tracking?.lastUpdatedAt || driverLocation?.timestamp)}</div>
+                <div>{formatDateTime(journey?.tracking?.lastUpdatedAt || journey?.tracking?.driverLocation?.timestamp)}</div>
               </div>
             </div>
 
@@ -385,10 +297,8 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
           </div>
 
           <div className="glass-card" style={{ padding: '1rem' }}>
-            <div 
-              ref={mapContainerRef}
-              style={{ height: '360px', width: '100%', borderRadius: '12px', overflow: 'hidden' }}
-            />
+            <div ref={mapContainerRef} style={{ height: '360px', width: '100%' }} />
+
             {!driverLocation && (
               <p style={{ marginTop: '0.8rem', color: 'var(--text-muted)', fontSize: '0.9rem' }}>
                 Driver has not started live location sharing yet.

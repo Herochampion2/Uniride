@@ -8,6 +8,7 @@ import users from './routes/users.js';
 import rides from './routes/rides.js';
 import routes from './routes/routes.js';
 import routing from './routes/routing.js';
+import journey from './routes/journey.js';
 
 const app = express();
 const port = 3000;
@@ -17,6 +18,7 @@ app.use(bodyParser.json());
 
 app.use('/api/users', users);
 app.use('/api/rides', rides);
+app.use('/api/journey', journey);
 app.use('/api/routes', routes);
 app.use('/api/routing', routing);
 

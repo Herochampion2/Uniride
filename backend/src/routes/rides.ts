@@ -4,6 +4,7 @@ import { PickupSequenceService } from '../PickupSequenceService.js';
 import db from '../db.js';
 import { DriverLocation, Ride, RidePassenger, RideStatus } from '../models/Ride.js';
 import { PricingService } from '../PricingService.js';
+import { MatchingService } from '../MatchingService.js';
 
 const router = Router();
 const rideStatuses: RideStatus[] = ['PENDING', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
@@ -327,6 +328,25 @@ router.get('/:id/tracking', async (req, res) => {
     destination: ride.destination,
     departureTime: ride.departureTime,
   });
+});
+
+// GET passenger route requests matched for a live driver ride
+router.get('/:id/pursuers', async (req, res) => {
+  await db.read();
+  const ride = db.data.rides.find((r) => r.id === req.params.id);
+  if (!ride) {
+    return res.status(404).json({ error: 'Ride not found' });
+  }
+
+  const routes = db.data.routes || [];
+  console.log(`[rides/:id/pursuers] rideId=${ride.id} routesCount=${routes.length}`);
+  if (routes.length === 0) {
+    console.log('[rides/:id/pursuers] no passenger route requests found in database');
+  }
+
+  const matches = MatchingService.findPassengerRequestsForDriverRide(ride, routes);
+  console.log(`[rides/:id/pursuers] returning ${matches.length} matches`);
+  res.json(matches);
 });
 
 // POST update live driver location
