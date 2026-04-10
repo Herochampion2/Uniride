@@ -1,6 +1,6 @@
 import { User } from './User';
 
-export type RideStatus = 'scheduled' | 'ongoing' | 'completed' | 'cancelled';
+export type RideStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED';
 export type VehicleType = '4-wheeler' | '2-wheeler';
 
 export interface DriverLocation {

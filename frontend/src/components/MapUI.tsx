@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -20,26 +20,44 @@ const minorLandmarks = [
 
 const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090];
 
+export interface MapWaypoint {
+  id: string;
+  lat: number;
+  lng: number;
+  type: 'driver' | 'pickup' | 'dropoff';
+  name?: string;
+  passengerId?: string;
+}
+
 const MapUI: React.FC<{
   userLocation?: [number, number];
   zoom?: number;
-  originMarker?: { pos: [number, number]; name: string };
-  destinationMarker?: { pos: [number, number]; name: string };
+  waypoints?: MapWaypoint[];
+  originMarker?: { name: string; pos: [number, number] };
+  destinationMarker?: { name: string; pos: [number, number] };
+  onWaypointAdd?: (lat: number, lng: number) => void;
+  onWaypointRemove?: (waypointId: string) => void;
   onMapClick?: (lat: number, lng: number) => void;
-}> = ({ userLocation, zoom = 11, originMarker, destinationMarker, onMapClick }) => { 
+  showRoute?: boolean;
+}> = ({
+  userLocation,
+  zoom = 11,
+  waypoints = [],
+  onWaypointAdd,
+  onWaypointRemove,
+  onMapClick,
+  showRoute = true
+}) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstance = useRef<L.Map | null>(null);
   const userLocationMarker = useRef<L.Marker | null>(null);
-  const originMarkerRef = useRef<L.Marker | null>(null);
-  const destinationMarkerRef = useRef<L.Marker | null>(null);
+  const waypointMarkers = useRef<Map<string, L.Marker>>(new Map());
   const routeLayerRef = useRef<L.GeoJSON | null>(null);
+  const [routeData, setRouteData] = useState<any>(null);
 
+  // Initialize map
   useEffect(() => {
-    if (!mapRef.current) return;
-
-    if (mapInstance.current) {
-      return;
-    }
+    if (!mapRef.current || mapInstance.current) return;
 
     mapInstance.current = L.map(mapRef.current, {
       zoomControl: false,
@@ -55,7 +73,7 @@ const MapUI: React.FC<{
       });
     }
 
-    // Create a nice custom dot icon matching the theme
+    // Add landmarks
     const customIcon = L.divIcon({
       className: 'custom-uniride-marker',
       html: `<div style="background-color: var(--primary); width: 14px; height: 14px; border-radius: 50%; border: 3px solid var(--accent); box-shadow: 0 4px 10px rgba(0,0,0,0.15);"></div>`,
@@ -64,14 +82,12 @@ const MapUI: React.FC<{
       popupAnchor: [0, -10]
     });
 
-    // Add landmarks without clustering
     landmarks.forEach(lm => {
       L.marker(lm.pos, { icon: customIcon })
         .addTo(mapInstance.current!)
         .bindPopup(`<div style="font-weight: 700; color: var(--accent); font-family: 'Inter', sans-serif;">${lm.name}</div><div style="font-size: 0.8rem; color: var(--text-muted); font-family: 'Inter', sans-serif;"><span class="uniride-brand">UniRide</span> Hotspot</div>`);
     });
 
-    // Create a smaller, more subtle icon for minor landmarks
     const minorIcon = L.divIcon({
       className: 'custom-uniride-marker-minor',
       html: `<div style="background-color: var(--white); width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--text-muted); box-shadow: 0 2px 5px rgba(0,0,0,0.1);"></div>`,
@@ -91,10 +107,12 @@ const MapUI: React.FC<{
         mapInstance.current.remove();
         mapInstance.current = null;
         userLocationMarker.current = null;
+        waypointMarkers.current.clear();
       }
     };
   }, []);
 
+  // Update user location marker
   useEffect(() => {
     if (!mapInstance.current || !userLocation) return;
 
@@ -122,122 +140,127 @@ const MapUI: React.FC<{
     }
   }, [userLocation, zoom]);
 
+  // Create waypoint icon based on type
+  const createWaypointIcon = (type: string) => {
+    const icons = {
+      driver: `<div style="background-color: #3b82f6; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">🚗</div>`,
+      pickup: `<div style="background-color: #22c55e; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">📍</div>`,
+      dropoff: `<div style="background-color: #ef4444; width: 16px; height: 16px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15); display: flex; align-items: center; justify-content: center; font-size: 10px; color: white;">🏁</div>`
+    };
+
+    return L.divIcon({
+      className: 'custom-waypoint-marker',
+      html: icons[type as keyof typeof icons] || icons.pickup,
+      iconSize: [22, 22],
+      iconAnchor: [11, 11],
+      popupAnchor: [0, -11]
+    });
+  };
+
+  // Update waypoints
   useEffect(() => {
     if (!mapInstance.current) return;
 
-    // Origin Marker
-    if (originMarker) {
-      if (!originMarkerRef.current) {
-        const icon = L.divIcon({
-          className: 'custom-uniride-marker',
-          html: `<div style="background-color: #22c55e; width: 14px; height: 14px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15);"></div>`,
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
-          popupAnchor: [0, -10]
-        });
-        originMarkerRef.current = L.marker(originMarker.pos, { icon })
-          .addTo(mapInstance.current)
-          .bindPopup(`<span style="font-family: Inter, sans-serif;"><strong>From:</strong> ${originMarker.name}</span>`);
-      } else {
-        originMarkerRef.current.setLatLng(originMarker.pos);
-        originMarkerRef.current.setPopupContent(`<span style="font-family: Inter, sans-serif;"><strong>From:</strong> ${originMarker.name}</span>`);
-      }
-    } else if (originMarkerRef.current) {
-      originMarkerRef.current.remove();
-      originMarkerRef.current = null;
-    }
+    // Remove old markers
+    waypointMarkers.current.forEach(marker => {
+      marker.remove();
+    });
+    waypointMarkers.current.clear();
 
-    // Destination Marker
-    if (destinationMarker) {
-      if (!destinationMarkerRef.current) {
-        const icon = L.divIcon({
-          className: 'custom-uniride-marker',
-          html: `<div style="background-color: #ef4444; width: 14px; height: 14px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.15);"></div>`,
-          iconSize: [20, 20],
-          iconAnchor: [10, 10],
-          popupAnchor: [0, -10]
-        });
-        destinationMarkerRef.current = L.marker(destinationMarker.pos, { icon })
-          .addTo(mapInstance.current)
-          .bindPopup(`<span style="font-family: Inter, sans-serif;"><strong>To:</strong> ${destinationMarker.name}</span>`);
-      } else {
-        destinationMarkerRef.current.setLatLng(destinationMarker.pos);
-        destinationMarkerRef.current.setPopupContent(`<span style="font-family: Inter, sans-serif;"><strong>To:</strong> ${destinationMarker.name}</span>`);
-      }
-    } else if (destinationMarkerRef.current) {
-      destinationMarkerRef.current.remove();
-      destinationMarkerRef.current = null;
-    }
+    // Add new markers
+    waypoints.forEach((waypoint, index) => {
+      const icon = createWaypointIcon(waypoint.type);
+      const marker = L.marker([waypoint.lat, waypoint.lng], { icon })
+        .addTo(mapInstance.current!)
+        .bindPopup(`
+          <div style="font-family: Inter, sans-serif;">
+            <strong>${waypoint.type.toUpperCase()}</strong><br/>
+            ${waypoint.name || `Point ${index + 1}`}<br/>
+            <button onclick="window.removeWaypoint('${waypoint.id}')" style="margin-top: 5px; padding: 2px 8px; background: #ef4444; color: white; border: none; border-radius: 3px; cursor: pointer;">Remove</button>
+          </div>
+        `);
 
-    // Auto fit bounds if both are present
-    if (originMarker && destinationMarker && mapInstance.current) {
-      const bounds = L.latLngBounds([originMarker.pos, destinationMarker.pos]);
+      waypointMarkers.current.set(waypoint.id, marker);
+    });
+
+    // Expose remove function globally for popup buttons
+    (window as any).removeWaypoint = (id: string) => {
+      onWaypointRemove?.(id);
+    };
+
+    // Fit bounds to show all waypoints
+    if (waypoints.length > 0) {
+      const bounds = L.latLngBounds(waypoints.map(w => [w.lat, w.lng]));
       if (userLocation) {
         bounds.extend(userLocation);
       }
-      mapInstance.current.flyToBounds(bounds, { padding: [40, 40], duration: 1.5 });
+      mapInstance.current.fitBounds(bounds, { padding: [40, 40] });
+    }
+  }, [waypoints, onWaypointRemove]);
 
-      // Fetch and draw route using OSRM API
-      const fetchRoute = async () => {
-        try {
-          const [lat1, lon1] = originMarker.pos;
-          const [lat2, lon2] = destinationMarker.pos;
-          const mapRefCtx = mapInstance.current;
-          if (!mapRefCtx) return;
-
-          const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson`);
-          
-          if (!res.ok) {
-            console.warn(`OSRM API error: ${res.status} ${res.statusText}. Skipping route display.`);
-            return;
-          }
-
-          const contentType = res.headers.get('content-type');
-          if (!contentType?.includes('application/json')) {
-            console.warn('OSRM API returned non-JSON response. Skipping route display.');
-            return;
-          }
-
-          const data = await res.json();
-          if (data.routes && data.routes.length > 0) {
-            const geometry = data.routes[0].geometry;
-            
-            if (routeLayerRef.current) {
-              routeLayerRef.current.remove();
-            }
-            
-            routeLayerRef.current = L.geoJSON(geometry, {
-              style: {
-                color: '#0ea5e9', // Matching webpage primary blue accent
-                weight: 6,
-                opacity: 0.9,
-                lineCap: 'round',
-                lineJoin: 'round'
-              }
-            }).addTo(mapRefCtx);
-          }
-        } catch (e) {
-          console.warn("Failed to fetch route from OSRM:", e);
-          // Silently fail - route display is optional
-        }
-      };
-      
-      // Add a small delay to prevent immediate rate limiting on rapid calls
-      const timeoutId = setTimeout(fetchRoute, 300);
-      
-      return () => clearTimeout(timeoutId);
-    } else {
+  // Calculate and draw route
+  useEffect(() => {
+    if (!mapInstance.current || !showRoute || waypoints.length < 2) {
       if (routeLayerRef.current) {
         routeLayerRef.current.remove();
         routeLayerRef.current = null;
       }
+      setRouteData(null);
+      return;
     }
-  }, [originMarker, destinationMarker]);
+
+    const fetchRoute = async () => {
+      try {
+        const routeWaypoints = waypoints.map(w => ({
+          lat: w.lat,
+          lng: w.lng,
+          name: w.name
+        }));
+
+        const response = await fetch('http://localhost:3000/api/routing/calculate-route', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ waypoints: routeWaypoints }),
+        });
+
+        if (!response.ok) {
+          console.warn('Route calculation failed');
+          return;
+        }
+
+        const routeResult = await response.json();
+        setRouteData(routeResult);
+
+        if (routeLayerRef.current) {
+          routeLayerRef.current.remove();
+        }
+
+        routeLayerRef.current = L.geoJSON(routeResult.geometry, {
+          style: {
+            color: '#0ea5e9',
+            weight: 6,
+            opacity: 0.9,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }
+        }).addTo(mapInstance.current!);
+
+      } catch (error) {
+        console.warn('Failed to fetch route:', error);
+      }
+    };
+
+    // Debounce route calculation
+    const timeoutId = setTimeout(fetchRoute, 500);
+    return () => clearTimeout(timeoutId);
+  }, [waypoints, showRoute]);
 
   return (
-    <div 
-      ref={mapRef} 
-      style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }} 
+    <div
+      ref={mapRef}
+      style={{ height: '100%', width: '100%', position: 'absolute', top: 0, left: 0, zIndex: 0 }}
     />
   );
 };

@@ -1,20 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RideService } from '../services/RideService';
 import { UserService } from '../services/UserService';
 import { User } from '../models/User';
+import { Ride } from '../models/Ride';
 import {
   Car, Bike, MapPin, ArrowLeft, CheckCircle, Navigation,
   ShieldAlert, Users, Clock, Route, X
 } from 'lucide-react';
 import AutocompleteInput from '../components/AutocompleteInput';
 import OfferRideMapUI from '../components/OfferRideMapUI';
+import { useValidPursuers, } from '../hooks/useValidPursuers';
 import {
   PursuerStop,
   haversineDistance,
   isNearRouteSegment,
   dijkstraWaypointOrder,
 } from '../services/routingUtils';
+import { PursuerFilterCandidate } from '../services/RoutingService';
 import '../styles/feature-pages.css';
 import '../styles/offer-ride-map.css';
 
@@ -61,6 +64,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | null>(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [activeRides, setActiveRides] = useState<any[]>([]);
 
   // Form state
   const [origin, setOrigin]           = useState('');
@@ -81,10 +85,37 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
   const [postedRide, setPostedRide]           = useState<PostedRide|null>(null);
   const [driverPos, setDriverPos]             = useState<[number,number]|null>(null);
   const [pursuerPings, setPursuerPings]       = useState<PursuerStop[]>([]);
+  const [routeCandidates, setRouteCandidates] = useState<PursuerFilterCandidate[]>([]);
   const [selectedPursuer, setSelectedPursuer] = useState<PursuerStop|null>(null);
   const [optimalWaypoints, setOptimalWaypoints] = useState<[number,number][]|null>(null);
   const [loadingPursuers, setLoadingPursuers] = useState(false);
   
+  const {
+    validPursuers,
+    loading: loadingPursuerFilter,
+    error: pursuerFilterError,
+  } = useValidPursuers(
+    originPos ? { lat: originPos[0], lng: originPos[1] } : null,
+    destPos ? { lat: destPos[0], lng: destPos[1] } : null,
+    routeCandidates,
+    10
+  );
+
+  const visiblePursuerPings = useMemo(
+    () => {
+      const validIds = new Set(validPursuers.map((item) => item.id));
+      return pursuerPings.filter((p) => validIds.has(p.id));
+    },
+    [pursuerPings, validPursuers]
+  );
+
+  useEffect(() => {
+    if (selectedPursuer && !visiblePursuerPings.some((p) => p.id === selectedPursuer.id)) {
+      setSelectedPursuer(null);
+      setOptimalWaypoints(null);
+    }
+  }, [selectedPursuer, visiblePursuerPings]);
+
   // Post-confirmation navigation state
   const [rideStatus, setRideStatus]           = useState<'LIVE' | 'RE-ROUTING' | 'IN-TRANSIT'>('LIVE');
   const [confirmedPursuer, setConfirmedPursuer] = useState<PursuerStop|null>(null);
@@ -102,19 +133,51 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
       .then(d => setUser(d ?? null))
       .catch(() => setUser(null))
       .finally(() => setLoadingUser(false));
+
+    // Load active rides for the user
+    RideService.getAllRides()
+      .then(rides => {
+        const userActiveRides = rides.filter((r: Ride) => r.driver.id === userId && (r.status === 'PENDING' || r.status === 'ACTIVE'));
+        setActiveRides(userActiveRides);
+      })
+      .catch(() => setActiveRides([]));
   }, [userId]);
 
   const handleUseCurrentLocation = () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(pos => {
-      const { latitude: lat, longitude: lng } = pos.coords;
-      setOriginPos([lat, lng]);
-      originPosRef.current = [lat, lng];
-      fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
-        .then(r => r.json())
-        .then(d => setOrigin(d.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`))
-        .catch(() => setOrigin(`${lat.toFixed(4)}, ${lng.toFixed(4)}`));
-    }, () => alert("Couldn't retrieve your location."));
+    if (!navigator.geolocation) {
+      const message = 'Geolocation is not supported by this browser or device.';
+      setError(message);
+      alert(message);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        setOriginPos([lat, lng]);
+        originPosRef.current = [lat, lng];
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+          .then((r) => r.json())
+          .then((d) => setOrigin(d.display_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`))
+          .catch(() => setOrigin(`${lat.toFixed(4)}, ${lng.toFixed(4)}`));
+      },
+      (err) => {
+        let message = "Couldn't retrieve your location.";
+        if (err.code === err.PERMISSION_DENIED) {
+          message = 'Location permission denied. Please allow location access in your browser settings.';
+        } else if (err.code === err.POSITION_UNAVAILABLE) {
+          message = 'Position unavailable. Check your device location settings and try again.';
+        } else if (err.code === err.TIMEOUT) {
+          message = 'Location request timed out. Please try again.';
+        }
+        setError(message);
+        alert(message);
+      },
+      {
+        timeout: 10000,
+        maximumAge: 60000,
+      }
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -264,6 +327,14 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
         }
       }
 
+      const candidates: PursuerFilterCandidate[] = unique.map((p) => ({
+        id: p.id,
+        name: p.name,
+        pickup: { lat: p.fromPos[0], lng: p.fromPos[1] },
+        dropoff: { lat: p.toPos[0], lng: p.toPos[1] },
+      }));
+
+      setRouteCandidates(candidates);
       setPursuerPings(unique);
     } catch {
       // silent — no pursuers to show
@@ -273,7 +344,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
   };
 
   const handlePursuerClick = (id: string) => {
-    const pursuer = pursuerPings.find(p => p.id === id);
+    const pursuer = visiblePursuerPings.find(p => p.id === id);
     if (!pursuer) return;
 
     if (selectedPursuer?.id === id) {
@@ -337,7 +408,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
 
       // Update ride status in backend
       if (postedRide && postedRide.id) {
-        await RideService.updateRideStatus(postedRide.id, 'ongoing');
+        await RideService.updateRideStatus(postedRide.id, 'ACTIVE');
       }
     } catch (err) {
       setRouteValidationError('Error confirming ride');
@@ -353,6 +424,17 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
     originPosRef.current = null; destPosRef.current = null;
     setPursuerPings([]); setSelectedPursuer(null);
     setOptimalWaypoints(null); setDriverPos(null);
+  };
+
+  const handleCancelRide = async () => {
+    if (!postedRide || !window.confirm('Are you sure you want to cancel this ride? All passengers will be notified.')) return;
+    try {
+      await RideService.cancelRideByDriver(postedRide.id, userId);
+      alert('Ride cancelled successfully.');
+      handleReset();
+    } catch (error) {
+      alert('Failed to cancel ride.');
+    }
   };
 
   // ── Distance helper for display ────────────────────────────────────────────
@@ -422,6 +504,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
             </div>
           </div>
           <div className="orm-topbar-actions">
+            <button className="orm-action-ghost" onClick={handleCancelRide} style={{ color: '#dc2626' }}><X size={14} /> Cancel Ride</button>
             <button className="orm-action-ghost" onClick={handleReset}><Car size={14} /> New Ride</button>
             <button className="orm-action-ghost" onClick={() => navigate('/')}><ArrowLeft size={14} /> Dashboard</button>
           </div>
@@ -470,19 +553,27 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
             <div className="orm-section-header">
               <Route size={14} />
               <span>Nearby Pursuers</span>
-              {loadingPursuers && <span className="orm-spinner" />}
-              {!loadingPursuers && <span className="orm-pursuer-count">{pursuerPings.length}</span>}
+              {(loadingPursuers || loadingPursuerFilter) && <span className="orm-spinner" />}
+              {!(loadingPursuers || loadingPursuerFilter) && (
+                <span className="orm-pursuer-count">{visiblePursuerPings.length}</span>
+              )}
             </div>
 
-            {!loadingPursuers && pursuerPings.length === 0 && (
+            {!loadingPursuers && !loadingPursuerFilter && visiblePursuerPings.length === 0 && (
               <div className="orm-empty-pursuers">
                 <Users size={36} style={{ opacity: 0.25 }} />
-                <p>No passengers found near your route yet.<br/>Check back once more rides are listed.</p>
+                <p>No passengers found within 10km deviation of your route.<br/>Expand your search or wait for more ride requests.</p>
+              </div>
+            )}
+
+            {pursuerFilterError && (
+              <div className="orm-filter-error">
+                ⚠️ {pursuerFilterError}
               </div>
             )}
 
             <div className="orm-pursuer-list">
-              {pursuerPings.map(p => {
+              {visiblePursuerPings.map((p) => {
                 const isSelected = selectedPursuer?.id === p.id;
                 return (
                   <button
@@ -521,7 +612,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
                 destinationPos={destPos ?? undefined}
                 destinationName={postedRide.destination}
                 driverPos={driverPos ?? undefined}
-                pursuerPings={pursuerPings}
+                pursuerPings={visiblePursuerPings}
                 selectedPursuerId={selectedPursuer?.id}
                 onPursuerClick={handlePursuerClick}
                 optimalWaypoints={optimalWaypoints}
@@ -648,7 +739,15 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
         </div>
       </div>
 
-      <form className="feature-form glass-card" onSubmit={handleSubmit}>
+      {activeRides.length > 0 ? (
+        <div className="glass-card" style={{ textAlign: 'center', padding: '2rem' }}>
+          <ShieldAlert size={48} style={{ color: '#f59e0b', marginBottom: '1rem' }} />
+          <h2>You have an active ride</h2>
+          <p>You cannot offer a new ride while you have an active or pending ride.</p>
+          <button className="primary-btn" onClick={() => navigate('/dashboard')}>Go to Dashboard</button>
+        </div>
+      ) : (
+        <form className="feature-form glass-card" onSubmit={handleSubmit}>
 
         {/* From */}
         <div className="form-group">
@@ -697,7 +796,10 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
               setVehicleType('two-wheeler');
               setAvailableSeats(1);
               if (destPos && originPos) {
-                const distance = haversineDistance(originPos[0], originPos[1], destPos[0], destPos[1]);
+                const distance = haversineDistance(
+                  { lat: originPos[0], lon: originPos[1] },
+                  { lat: destPos[0], lon: destPos[1] }
+                );
                 setEstimatedCost(calculateRideCost(distance, 'two-wheeler'));
               }
             }} style={{
@@ -718,7 +820,10 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
               setVehicleType('four-wheeler');
               setAvailableSeats(3);
               if (destPos && originPos) {
-                const distance = haversineDistance(originPos[0], originPos[1], destPos[0], destPos[1]);
+                const distance = haversineDistance(
+                  { lat: originPos[0], lon: originPos[1] },
+                  { lat: destPos[0], lon: destPos[1] }
+                );
                 setEstimatedCost(calculateRideCost(distance, 'four-wheeler'));
               }
             }} style={{
@@ -792,6 +897,7 @@ const OfferRidePage: React.FC<{ userId: string }> = ({ userId }) => {
             : <><Car size={16} /> Post Ride</>}
         </button>
       </form>
+      )}
     </div>
   );
 };

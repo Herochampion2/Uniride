@@ -345,7 +345,7 @@ const OfferRideMapUI: React.FC<OfferRideMapUIProps> = ({
         }
       } catch {/* silent */ }
     })();
-  }, [generateRouteKey(optimalWaypoints)]);
+  }, [generateRouteKey(optimalWaypoints ?? null)]);
 
   // ── Confirmed active navigation route (solid blue) ────────────────────────
   // CRITICAL: Use route key in dependencies to force complete layer destruction
@@ -389,7 +389,7 @@ const OfferRideMapUI: React.FC<OfferRideMapUIProps> = ({
         }
       } catch {/* silent */ }
     })();
-  }, [generateRouteKey(confirmedRoute)]);
+  }, [generateRouteKey(confirmedRoute ?? null)]);
 
   return (
     <div style={{ position: 'relative', height: '100%', width: '100%' }}>

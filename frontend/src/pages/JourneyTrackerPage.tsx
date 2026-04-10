@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Navigation, Play, Square, Clock, User as UserIcon } from 'lucide-react';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -59,6 +59,8 @@ const formatDateTime = (value?: string) => {
 const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
   const navigate = useNavigate();
   const { rideId } = useParams<{ rideId: string }>();
+  const location = useLocation();
+  const rideFromState = (location.state as { ride?: RideDetails } | null)?.ride ?? null;
   const watchIdRef = useRef<number | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<L.Map | null>(null);
@@ -66,7 +68,7 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
   const viewerMarkerRef = useRef<L.CircleMarker | null>(null);
   const lineRef = useRef<L.Polyline | null>(null);
 
-  const [ride, setRide] = useState<RideDetails | null>(null);
+  const [ride, setRide] = useState<RideDetails | null>(rideFromState);
   const [snapshot, setSnapshot] = useState<TrackingSnapshot | null>(null);
   const [viewerLocation, setViewerLocation] = useState<DriverLocation | null>(null);
   const [loading, setLoading] = useState(true);
@@ -92,8 +94,9 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
     }
 
     try {
+      const ridePromise = rideFromState ? Promise.resolve(rideFromState) : RideService.getRideById(rideId);
       const [rideData, trackingData] = await Promise.all([
-        RideService.getRideById(rideId),
+        ridePromise,
         RideService.getRideTracking(rideId),
       ]);
       setRide(rideData);
@@ -261,7 +264,7 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
     }
 
     setError('');
-    await RideService.updateRideStatus(rideId, 'ongoing');
+    await RideService.updateRideStatus(rideId, 'ACTIVE');
     setIsSharing(true);
 
     watchIdRef.current = navigator.geolocation.watchPosition(
@@ -305,7 +308,7 @@ const JourneyTrackerPage: React.FC<{ userId: string }> = ({ userId }) => {
       watchIdRef.current = null;
     }
     if (rideId) {
-      await RideService.updateRideStatus(rideId, 'completed');
+      await RideService.updateRideStatus(rideId, 'COMPLETED');
       await refreshTracker();
     }
     setIsSharing(false);

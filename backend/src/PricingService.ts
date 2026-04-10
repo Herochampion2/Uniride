@@ -271,4 +271,127 @@ export class PricingService {
 
     return updatedPassengers;
   }
+
+  /**
+   * Fuel-sharing pricing model for bikes
+   * passengerFare = max(fuelCost / numberOfPeople, minimumFare)
+   */
+  static calculateFuelSharingFare(params: {
+    totalDistance: number; // in km
+    fuelRatePerKm: number; // cost per km
+    numberOfPeople: number; // driver + passengers
+    minimumFare?: number;
+  }): {
+    fuelCost: number;
+    passengerFare: number;
+    totalCost: number;
+    driverContribution: number;
+  } {
+    const { totalDistance, fuelRatePerKm, numberOfPeople, minimumFare = 10 } = params;
+
+    const fuelCost = roundMoney(totalDistance * fuelRatePerKm);
+    const passengerFare = roundMoney(Math.max(fuelCost / numberOfPeople, minimumFare));
+    const totalCost = roundMoney(passengerFare * numberOfPeople);
+    const driverContribution = roundMoney(totalCost - fuelCost);
+
+    return {
+      fuelCost,
+      passengerFare,
+      totalCost,
+      driverContribution
+    };
+  }
+
+  /**
+   * Distance-based pricing
+   * passengerFare = passengerDistance × ratePerKm
+   */
+  static calculateDistanceBasedFare(params: {
+    passengerDistance: number; // in km
+    ratePerKm: number;
+    minimumFare?: number;
+  }): number {
+    const { passengerDistance, ratePerKm, minimumFare = 10 } = params;
+    return roundMoney(Math.max(passengerDistance * ratePerKm, minimumFare));
+  }
+
+  /**
+   * Calculate pricing for a ride with multiple passengers using actual route distances
+   */
+  static calculateRidePricing(params: {
+    driverLocation: { lat: number; lng: number };
+    passengerStops: Array<{
+      pickup: { lat: number; lng: number };
+      dropoff: { lat: number; lng: number };
+      passengerId: string;
+    }>;
+    vehicleType: VehicleType;
+    useFuelSharing?: boolean;
+    fuelRatePerKm?: number;
+    ratePerKm?: number;
+    minimumFare?: number;
+  }): {
+    totalDistance: number;
+    passengerFares: Array<{
+      passengerId: string;
+      distance: number;
+      fare: number;
+    }>;
+    totalCost: number;
+    driverContribution: number;
+  } {
+    const {
+      driverLocation,
+      passengerStops,
+      vehicleType,
+      useFuelSharing = false,
+      fuelRatePerKm = 2, // Default fuel rate for bikes
+      ratePerKm = 4, // Default distance rate
+      minimumFare = 10
+    } = params;
+
+    // For simplicity, calculate individual distances
+    // In production, this would use the routing service for accurate distances
+    let totalDistance = 0;
+    const passengerFares = passengerStops.map(stop => {
+      const pickupDistance = haversineDistance(
+        driverLocation.lat, driverLocation.lng,
+        stop.pickup.lat, stop.pickup.lng
+      );
+      const rideDistance = haversineDistance(
+        stop.pickup.lat, stop.pickup.lng,
+        stop.dropoff.lat, stop.dropoff.lng
+      );
+      const passengerDistance = pickupDistance + rideDistance;
+
+      totalDistance = Math.max(totalDistance, passengerDistance);
+
+      let fare: number;
+      if (useFuelSharing) {
+        // Fuel sharing: split total fuel cost
+        const fuelCost = totalDistance * fuelRatePerKm;
+        fare = Math.max(fuelCost / (passengerStops.length + 1), minimumFare); // +1 for driver
+      } else {
+        // Distance-based
+        fare = Math.max(passengerDistance * ratePerKm, minimumFare);
+      }
+
+      return {
+        passengerId: stop.passengerId,
+        distance: roundMoney(passengerDistance),
+        fare: roundMoney(fare)
+      };
+    });
+
+    const totalCost = passengerFares.reduce((sum, p) => sum + p.fare, 0);
+    const driverContribution = useFuelSharing ?
+      roundMoney(totalCost - (totalDistance * fuelRatePerKm)) : 0;
+
+    return {
+      totalDistance: roundMoney(totalDistance),
+      passengerFares,
+      totalCost: roundMoney(totalCost),
+      driverContribution
+    };
+  }
 }

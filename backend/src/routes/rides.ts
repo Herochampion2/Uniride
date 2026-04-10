@@ -6,7 +6,7 @@ import { DriverLocation, Ride, RidePassenger, RideStatus } from '../models/Ride.
 import { PricingService } from '../PricingService.js';
 
 const router = Router();
-const rideStatuses: RideStatus[] = ['scheduled', 'ongoing', 'completed', 'cancelled'];
+const rideStatuses: RideStatus[] = ['PENDING', 'ACTIVE', 'COMPLETED', 'CANCELLED'];
 
 const withPickupSequence = (ride: Ride) => ({
   ...ride,
@@ -43,7 +43,6 @@ const normalizeExistingPassenger = (ride: Ride, passenger: any, index: number): 
       : new Date(Date.now() - (index + 1) * 60000).toISOString();
 
   const baseFare = PricingService.calculateBaseFare({
-    rideCost: ride.cost,
     pricingConfig,
     explicitBaseFare:
       asNumber(passenger?.baseFare) ||
@@ -181,11 +180,22 @@ router.get('/:id', async (req, res) => {
 // POST create a new ride
 router.post('/', async (req, res) => {
   await db.read();
+  const driverId = req.body.driver?.id;
+  if (!driverId) {
+    return res.status(400).json({ error: 'Driver ID is required' });
+  }
+
+  // Check if driver has an active ride
+  const activeRide = db.data.rides.find(r => r.driver.id === driverId && (r.status === 'PENDING' || r.status === 'ACTIVE'));
+  if (activeRide) {
+    return res.status(400).json({ error: 'Driver already has an active ride' });
+  }
+
   const newRide: Ride = {
     ...req.body,
     id: uuidv4(),
     passengers: [],
-    status: 'scheduled',
+    status: 'PENDING',
     tracking: {
       isLive: false,
     },
@@ -293,11 +303,30 @@ router.patch('/:id/status', async (req, res) => {
 
   ride.status = status;
   ride.tracking = ride.tracking || { isLive: false };
-  ride.tracking.isLive = status === 'ongoing';
+  ride.tracking.isLive = status === 'ACTIVE';
   ride.tracking.lastUpdatedAt = new Date().toISOString();
 
   await db.write();
   res.json({ message: 'Ride status updated', ride });
+});
+
+// GET ride tracking
+router.get('/:id/tracking', async (req, res) => {
+  await db.read();
+  const ride = db.data.rides.find((r) => r.id === req.params.id);
+  if (!ride) {
+    return res.status(404).json({ error: 'Ride not found' });
+  }
+
+  res.json({
+    rideId: ride.id,
+    status: ride.status || 'PENDING',
+    tracking: ride.tracking,
+    driver: ride.driver,
+    origin: ride.origin,
+    destination: ride.destination,
+    departureTime: ride.departureTime,
+  });
 });
 
 // POST update live driver location
@@ -346,8 +375,8 @@ router.post('/:id/tracking', async (req, res) => {
   ride.tracking.driverLocation = driverLocation;
   ride.tracking.lastUpdatedAt = new Date().toISOString();
 
-  if (ride.status !== 'ongoing') {
-    ride.status = 'ongoing';
+  if (ride.status !== 'ACTIVE') {
+    ride.status = 'ACTIVE';
   }
   ride.tracking.isLive = true;
 
@@ -355,26 +384,58 @@ router.post('/:id/tracking', async (req, res) => {
   res.json({ message: 'Location updated', tracking: ride.tracking, status: ride.status });
 });
 
-// GET live tracker snapshot
-router.get('/:id/tracking', async (req, res) => {
+// POST cancel ride by driver
+router.post('/:id/cancel/driver', async (req, res) => {
   await db.read();
-  const ride = db.data.rides.find((r) => r.id === req.params.id);
+  const ride = db.data.rides.find(r => r.id === req.params.id);
   if (!ride) {
     return res.status(404).json({ error: 'Ride not found' });
   }
+  if (ride.driver.id !== req.body.driverId) {
+    return res.status(403).json({ error: 'Only the driver can cancel the ride' });
+  }
+  if (ride.status === 'COMPLETED' || ride.status === 'CANCELLED') {
+    return res.status(400).json({ error: 'Ride is already completed or cancelled' });
+  }
 
-  res.json({
-    rideId: ride.id,
-    status: ride.status || 'scheduled',
-    tracking: ride.tracking || { isLive: false },
-    driver: {
-      id: ride.driver?.id,
-      name: ride.driver?.name,
-    },
-    origin: ride.origin,
-    destination: ride.destination,
-    departureTime: ride.departureTime,
+  ride.status = 'CANCELLED';
+  // Notify passengers (in a real app, send notifications)
+  // For now, just mark them as cancelled
+  ride.passengers.forEach(passenger => {
+    // Reset passenger state - in a real app, update user records
   });
+
+  await db.write();
+  res.json({ message: 'Ride cancelled by driver', ride });
+});
+
+// POST cancel booking by passenger
+router.post('/:id/cancel/passenger', async (req, res) => {
+  await db.read();
+  const ride = db.data.rides.find(r => r.id === req.params.id);
+  if (!ride) {
+    return res.status(404).json({ error: 'Ride not found' });
+  }
+  const passengerId = req.body.passengerId;
+  if (!passengerId) {
+    return res.status(400).json({ error: 'Passenger ID is required' });
+  }
+
+  const passengerIndex = ride.passengers.findIndex(p => p.id === passengerId);
+  if (passengerIndex === -1) {
+    return res.status(404).json({ error: 'Passenger not found on this ride' });
+  }
+
+  if (ride.status === 'COMPLETED' || ride.status === 'CANCELLED') {
+    return res.status(400).json({ error: 'Ride is already completed or cancelled' });
+  }
+
+  // Remove passenger and increment available seats
+  ride.passengers.splice(passengerIndex, 1);
+  ride.availableSeats += 1;
+
+  await db.write();
+  res.json({ message: 'Booking cancelled by passenger', ride });
 });
 
 // DELETE a ride

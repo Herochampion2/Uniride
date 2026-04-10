@@ -129,6 +129,64 @@
   color: var(--primary);
 }
 
+.active-ride-card {
+  background: white;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  border: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+}
+
+.active-ride-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08);
+  border-color: rgba(59, 130, 246, 0.15);
+}
+
+.active-ride-route {
+  margin: 0 0 0.4rem 0;
+  font-weight: 700;
+}
+
+.active-ride-details {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.active-ride-status {
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.active-ride-status.active {
+  color: #16a34a;
+}
+
+.active-ride-status.pending {
+  color: #ca8a04;
+}
+
+.active-ride-button {
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.active-ride-button:hover {
+  filter: brightness(1.05);
+}
+
 /* Chat Bubble Container */
 .chat-container {
   position: fixed;

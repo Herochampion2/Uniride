@@ -8,6 +8,8 @@ import FindRidePage from './pages/FindRidePage';
 import OfferRidePage from './pages/OfferRidePage';
 import SavedRoutesPage from './pages/SavedRoutesPage';
 import JourneyTrackerPage from './pages/JourneyTrackerPage';
+import LiveRidePage from './pages/LiveRidePage';
+import RidePlanner from './components/RidePlanner';
 import { Home, User, LogOut, Menu } from 'lucide-react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import StartupAnimation from './components/StartupAnimation';
@@ -47,6 +49,21 @@ const Navbar: React.FC<{ userId: string | null; handleLogout: () => void; toggle
             })}>
               <Home size={18} />
               Home
+            </NavLink>
+          </li>
+          <li>
+            <NavLink to="/ride-planner" style={({ isActive }) => ({
+              background: isActive ? 'var(--text-main)' : 'transparent',
+              color: isActive ? 'white' : 'var(--text-muted)',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              textDecoration: 'none',
+              fontWeight: '600'
+            })}>
+              🗺️ Route Planner
             </NavLink>
           </li>
           {userId ? (
@@ -147,6 +164,14 @@ const App: React.FC = () => {
             <Route
               path="/journey/:rideId"
               element={userId ? <JourneyTrackerPage userId={userId} /> : <Navigate to="/login" />}
+            />
+            <Route
+              path="/live-ride/:rideId"
+              element={userId ? <LiveRidePage userId={userId} /> : <Navigate to="/login" />}
+            />
+            <Route
+              path="/ride-planner"
+              element={<RidePlanner />}
             />
             <Route path="/login" element={<AuthPage setUserId={setUserId} />} />
             <Route path="/signup" element={<AuthPage setUserId={setUserId} />} />

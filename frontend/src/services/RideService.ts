@@ -1,4 +1,4 @@
-const API_URL = 'http://localhost:3000/api';
+const API_URL = '/api';
 
 export const RideService = {
   getAllRides: (filters?: { origin?: string; destination?: string; date?: string; originLat?: number; originLng?: number; destLat?: number; destLng?: number; radius?: number }) => {
@@ -31,7 +31,7 @@ export const RideService = {
       body: JSON.stringify(passenger),
     }).then((res) => res.json());
   },
-  updateRideStatus: (rideId: string, status: 'scheduled' | 'ongoing' | 'completed' | 'cancelled') => {
+  updateRideStatus: (rideId: string, status: 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED') => {
     return fetch(`${API_URL}/rides/${rideId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -62,6 +62,20 @@ export const RideService = {
   deleteRide: (rideId: string) => {
     return fetch(`${API_URL}/rides/${rideId}`, {
       method: 'DELETE',
+    }).then((res) => res.json());
+  },
+  cancelRideByDriver: (rideId: string, driverId: string) => {
+    return fetch(`${API_URL}/rides/${rideId}/cancel/driver`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ driverId }),
+    }).then((res) => res.json());
+  },
+  cancelBookingByPassenger: (rideId: string, passengerId: string) => {
+    return fetch(`${API_URL}/rides/${rideId}/cancel/passenger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passengerId }),
     }).then((res) => res.json());
   },
 };

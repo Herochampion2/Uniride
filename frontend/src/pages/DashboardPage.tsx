@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { User } from '../models/User';
+import { Ride } from '../models/Ride';
 import { UserService } from '../services/UserService';
-import { Search, MapPin, Clock, Plus } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
+import { RideService } from '../services/RideService';
+import { Search, MapPin, Clock, Plus, X } from 'lucide-react';
+import { useNavigate, Link } from 'react-router-dom';
 import MapUI from '../components/MapUI';
 import ChatBubble from '../components/ChatBubble';
 import '../styles/dashboard.css'; 
@@ -10,6 +12,8 @@ import '../styles/dashboard.css';
 const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ userId, isSidebarOpen }) => {
   const navigate = useNavigate();
   const [user, setUser] = useState<User | undefined>();
+  const [userRides, setUserRides] = useState<any[]>([]);
+  const [loadingRides, setLoadingRides] = useState(true);
   // Mock flag to represent a confirmed ride - keeping it false for now as requested
   const [hasConfirmedRide] = useState<boolean>(false);
   const [currentLocation, setCurrentLocation] = useState<[number, number] | undefined>(undefined);
@@ -21,7 +25,74 @@ const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ u
     UserService.getUser(userId)
       .then(data => setUser(data))
       .catch(err => console.error("Failed to fetch user", err));
+
+    RideService.getAllRides()
+      .then(rides => {
+        const myRides = rides.filter((r: Ride) => r.driver.id === userId || r.passengers.some((p: User) => p.id === userId));
+        setUserRides(myRides);
+      })
+      .catch(err => console.error("Failed to fetch rides", err))
+      .finally(() => setLoadingRides(false));
   }, [userId]);
+
+  const handleCancelBooking = async (rideId: string) => {
+    console.log('[handleCancelBooking] Initiated for ride:', rideId);
+    if (!window.confirm('Are you sure you want to cancel this booking?')) {
+      console.log('[handleCancelBooking] User aborted cancellation.');
+      return;
+    }
+    
+    try {
+      console.log('[handleCancelBooking] Making API request to cancel passenger booking...');
+      await RideService.cancelBookingByPassenger(rideId, userId);
+      console.log('[handleCancelBooking] API request successful. Updating local state.');
+      
+      alert('Booking cancelled successfully.');
+      setUserRides(prev => prev.filter(r => r.id !== rideId));
+    } catch (error) {
+      console.error('[handleCancelBooking] API request failed:', error);
+      alert('Failed to cancel booking.');
+    }
+  };
+
+  const handleCancelRide = async (rideId: string) => {
+    console.log('[handleCancelRide] Initiated for ride:', rideId);
+    if (!window.confirm('Are you sure you want to cancel this ride?')) {
+      console.log('[handleCancelRide] User aborted cancellation.');
+      return;
+    }
+    
+    try {
+      console.log('[handleCancelRide] Making API request to cancel driver ride...');
+      const response = await RideService.cancelRideByDriver(rideId, userId);
+      console.log('[handleCancelRide] API response:', response);
+      console.log('[handleCancelRide] API request successful. Updating local state.');
+      
+      setUserRides(prev => prev.filter(r => r.id !== rideId));
+    } catch (error) {
+      console.error('[handleCancelRide] API request failed:', error);
+      alert('Failed to cancel ride.');
+    }
+  };
+
+  const handleRideCardClick = (ride: Ride) => {
+    console.log('[handleRideCardClick] Navigating to live ride page for ride:', ride.id);
+    navigate(`/live-ride/${ride.id}`, { state: { ride } });
+  };
+
+  const handleCancelRideClick = (event: React.MouseEvent<HTMLButtonElement>, rideId: string) => {
+    console.log('[handleCancelRideClick] Button clicked for ride:', rideId);
+    event.preventDefault();
+    event.stopPropagation();
+    handleCancelRide(rideId);
+  };
+
+  const handleCancelBookingClick = (event: React.MouseEvent<HTMLButtonElement>, rideId: string) => {
+    console.log('[handleCancelBookingClick] Button clicked for ride:', rideId);
+    event.preventDefault();
+    event.stopPropagation();
+    handleCancelBooking(rideId);
+  };
 
   const handleFindRide = () => {
     setLocationError('');
@@ -68,21 +139,69 @@ const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ u
         </div>
 
         {/* Active Ride Widget */}
-        {hasConfirmedRide ? (
-          <div className="active-ride-widget">
-            <div className="active-ride-header">
-              <span>
-                <Clock size={14} style={{display:'inline', marginRight:'4px', verticalAlign:'text-bottom'}}/> 
-                Upcoming Trip
-              </span>
-              <span style={{opacity: 0.8}}>In 45 mins</span>
-            </div>
-            <div style={{fontSize: '1.2rem', fontWeight: 800, marginBottom: '4px'}}>
-              {user?.university || "Delhi Technological University"}
-            </div>
-            <div style={{fontSize: '0.9rem', opacity: 0.9}}>
-              Driver: Rahul K.  White Swift
-            </div>
+        {loadingRides ? (
+          <div style={{
+            background: 'rgba(0,0,0,0.02)', 
+            borderRadius: '12px', 
+            padding: '1.5rem', 
+            textAlign: 'center',
+            marginBottom: '1.5rem',
+            border: '1px dashed var(--border)'
+          }}>
+            <p style={{margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem'}}>Loading rides...</p>
+          </div>
+        ) : userRides.filter((r: Ride) => r.status === 'ACTIVE' || r.status === 'PENDING').length > 0 ? (
+          <div style={{
+            background: 'rgba(0,0,0,0.02)', 
+            borderRadius: '12px', 
+            padding: '1.5rem', 
+            marginBottom: '1.5rem',
+            border: '1px solid var(--border)'
+          }}>
+            <h4 style={{margin: '0 0 1rem 0', fontSize: '1rem', color: 'var(--text)'}}>Active Rides</h4>
+            {userRides.filter((r: Ride) => r.status === 'ACTIVE' || r.status === 'PENDING').map((ride: Ride) => (
+              <div
+                key={ride.id}
+                className="active-ride-card"
+                role="button"
+                tabIndex={0}
+                onClick={() => handleRideCardClick(ride)}
+                onKeyDown={(event: React.KeyboardEvent<HTMLDivElement>) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    handleRideCardClick(ride);
+                  }
+                }}
+                style={{ cursor: 'pointer' }}
+              >
+                <div>
+                  <p className="active-ride-route">{ride.origin} → {ride.destination}</p>
+                  <p className="active-ride-details">
+                    {new Date(ride.departureTime).toLocaleString()} • {ride.passengers.length}/{ride.availableSeats + ride.passengers.length} seats
+                  </p>
+                  <p className={`active-ride-status ${ride.status === 'ACTIVE' ? 'active' : 'pending'}`}>
+                    Status: {ride.status}
+                  </p>
+                </div>
+                {ride.driver.id === userId ? (
+                  <button
+                    type="button"
+                    className="active-ride-button"
+                    onClick={(event: React.MouseEvent<HTMLButtonElement>) => handleCancelRideClick(event, ride.id)}
+                  >
+                    Cancel Ride
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="active-ride-button"
+                    onClick={(event: React.MouseEvent<HTMLButtonElement>) => handleCancelBookingClick(event, ride.id)}
+                  >
+                    Cancel Booking
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
         ) : (
           <div style={{
@@ -93,7 +212,7 @@ const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ u
             marginBottom: '1.5rem',
             border: '1px dashed var(--border)'
           }}>
-            <p style={{margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem'}}>No trips scheduled for today.</p>
+            <p style={{margin: 0, color: 'var(--text-muted)', fontSize: '0.9rem'}}>No active trips.</p>
           </div>
         )}
 
@@ -112,7 +231,7 @@ const DashboardPage: React.FC<{ userId: string, isSidebarOpen: boolean }> = ({ u
             </div>
             <div className="action-text">
               <h3>Find a Ride</h3>
-              <p>{locating ? 'Detecting your location...' : 'Search for rides to campus'}</p>
+              <p>Search for available rides to your destination</p>
             </div>
           </div>
         </button>
